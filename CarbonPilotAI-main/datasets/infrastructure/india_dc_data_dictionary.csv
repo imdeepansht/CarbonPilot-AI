@@ -1,0 +1,30 @@
+file,column,description
+india_dc_facilities,facility_id,Unique synthetic site ID
+india_dc_facilities,operator,FICTIONAL operator name (not a real company)
+india_dc_facilities,facility_class,Colocation / Hyperscale / AI-ready / Enterprise
+india_dc_facilities,"city, locality, state",Real Indian hub areas; coordinates are approximate with random jitter
+india_dc_facilities,status,Operational / Under construction / Planned
+india_dc_facilities,year_commissioned_or_expected,"Year live, or expected year if not yet operational"
+india_dc_facilities,tier_standard,Uptime-style tier label (synthetic)
+india_dc_facilities,it_load_capacity_mw,Critical IT capacity in MW
+india_dc_facilities,gross_area_sqft / white_space_sqft,Building area and rack-floor area
+india_dc_facilities,rack_capacity / avg_design_kw_per_rack,Racks and design density
+india_dc_facilities,cooling_type,Primary cooling architecture
+india_dc_facilities,power_redundancy / ups_type / dg_capacity_mva / grid_connection_kv,Power chain
+india_dc_facilities,renewable_share_pct,Share of energy from renewables (synthetic)
+india_dc_facilities,design_pue,Design PUE; real-world PUE is in the telemetry file
+india_dc_facilities,measured_it_utilization,Fraction of capacity in use (operational sites only)
+india_dc_facilities,water_source,Cooling water source
+india_dc_facilities,seismic_zone,BIS seismic zone of the city (2-5)
+india_dc_telemetry_hourly,timestamp,"Hourly, 1-30 April 2026"
+india_dc_telemetry_hourly,it_load_kw,IT equipment power
+india_dc_telemetry_hourly,cooling_kw,"Chillers, pumps, CRAH/fan walls, cooling towers"
+india_dc_telemetry_hourly,ups_loss_kw / misc_overhead_kw,"UPS/distribution losses; lighting, BMS, security"
+india_dc_telemetry_hourly,total_facility_kw / pue,Total power and total/IT ratio
+india_dc_telemetry_hourly,outside_temp_c / outside_rh_pct,Simulated April weather for the city's climate
+india_dc_telemetry_hourly,chw_supply_c / chw_return_c,Chilled-water loop temperatures
+india_dc_telemetry_hourly,avg_rack_inlet_c,Average server inlet temperature (ASHRAE-style range)
+india_dc_telemetry_hourly,grid_available / dg_running,Grid outage flag and diesel generator state
+india_dc_telemetry_hourly,power_factor / grid_frequency_hz,Electrical quality metrics
+india_dc_telemetry_hourly,water_use_l_per_kwh_it,Simulated WUE-style water metric
+india_dc_telemetry_hourly,co2_kg,Hourly emissions using an assumed 0.71 kg/kWh grid factor

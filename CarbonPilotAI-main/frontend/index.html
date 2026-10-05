@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CarbonPilot AI — Energy Source Switch Planner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230A0E0C'/%3E%3Cpath d='M13 2 4 14h6l-1 8 9-12h-6z' fill='%237CDB8A'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  // Load anime.js and Chart.js with an automatic fallback to a second CDN,
+  // so a single blocked/flaky request (corporate firewall, ad-blocker,
+  // transient CDN outage) can't take down the whole page.
+  function loadScriptWithFallback(sources) {
+    return new Promise((resolve, reject) => {
+      let i = 0;
+      function tryNext() {
+        if (i >= sources.length) { reject(new Error('All sources failed: ' + sources.join(', '))); return; }
+        const el = document.createElement('script');
+        el.src = sources[i++];
+        el.onload = () => resolve();
+        el.onerror = () => tryNext();
+        document.head.appendChild(el);
+      }
+      tryNext();
+    });
+  }
+  window.__libsReady = Promise.all([
+    loadScriptWithFallback([
+      'https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js',
+      'https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js',
+      'https://unpkg.com/animejs@3.2.1/lib/anime.min.js',
+    ]),
+    loadScriptWithFallback([
+      'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
+      'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js',
+      'https://unpkg.com/chart.js@4.4.4/dist/chart.umd.min.js',
+    ]),
+  ]);
+</script>
+<style>
+  :root{
+    --bg:#0A0E0C;
+    --bg-raise:#0F1512;
+    --surface:#12181A;
+    --border:rgba(237,242,238,0.08);
+    --border-strong:rgba(237,242,238,0.16);
+    --text:#EDF2EE;
+    --text-dim:#94A39A;
+    --text-faint:#5E6B63;
+    --solar:#7CDB8A;
+    --grid:#E8B34D;
+    --battery:#4FC3D9;
+    --diesel:#E2604F;
+    --font-display:'Space Grotesk', sans-serif;
+    --font-body:'Inter', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+  }
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--font-body); line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background-image:
+      radial-gradient(circle at 18% 8%, rgba(124,219,138,0.07), transparent 40%),
+      radial-gradient(circle at 82% 30%, rgba(79,195,217,0.06), transparent 45%),
+      radial-gradient(rgba(237,242,238,0.045) 1px, transparent 1px);
+    background-size:auto, auto, 26px 26px;
+  }
+  a{ color:inherit; }
+  .wrap{ max-width:1120px; margin:0 auto; padding:0 28px; }
+  h1,h2,h3{ font-family:var(--font-display); margin:0; letter-spacing:-0.01em; }
+  .mono{ font-family:var(--font-mono); }
+
+  /* ---------- header ---------- */
+  header{
+    position:sticky; top:0; z-index:50;
+    background:rgba(10,14,12,0.82); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);
+  }
+  .nav{ display:flex; align-items:center; justify-content:space-between; padding:16px 0; }
+  .brand{ display:flex; align-items:center; gap:9px; font-family:var(--font-display); font-weight:600; font-size:17px; }
+  .brand svg{ width:20px; height:20px; }
+  .navlinks{ display:flex; gap:28px; font-size:14.5px; color:var(--text-dim); }
+  .navlinks a{ text-decoration:none; transition:color .15s; }
+  .navlinks a:hover{ color:var(--text); }
+  .status-pill{
+    display:flex; align-items:center; gap:7px; font-family:var(--font-mono); font-size:12.5px;
+    color:var(--text-dim); border:1px solid var(--border); padding:6px 12px; border-radius:20px;
+  }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--text-faint); flex:none; }
+  .dot.up{ background:var(--solar); box-shadow:0 0 8px var(--solar); }
+  .dot.down{ background:var(--diesel); }
+
+  /* ---------- hero ---------- */
+  .hero{ padding:88px 0 64px; }
+  .hero-grid{ display:grid; grid-template-columns:1.1fr 0.9fr; gap:56px; align-items:start; }
+  .hero h1{
+    font-size:clamp(34px, 4.6vw, 54px); line-height:1.08; font-weight:600;
+    background:linear-gradient(100deg, #EDF2EE 40%, var(--solar) 78%, var(--battery) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    max-width:620px;
+  }
+  .hero p.lead{ margin:22px 0 0; max-width:480px; color:var(--text-dim); font-size:16.5px; }
+  .hero-ctas{ display:flex; gap:14px; margin-top:32px; flex-wrap:wrap; }
+  .btn{
+    font-family:var(--font-body); font-weight:600; font-size:14.5px; padding:12px 22px;
+    border-radius:8px; border:1px solid transparent; cursor:pointer; transition:transform .15s, opacity .15s;
+  }
+  .btn:active{ transform:scale(0.97); }
+  .btn-primary{ background:var(--solar); color:#0A140D; }
+  .btn-primary:hover{ opacity:.92; }
+  .btn-ghost{ background:transparent; color:var(--text); border-color:var(--border-strong); }
+  .btn-ghost:hover{ border-color:var(--solar); }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .stat-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:0; margin-top:52px; border-top:1px solid var(--border); }
+  .stat{ padding:20px 20px 0; border-right:1px solid var(--border); }
+  .stat:last-child{ border-right:none; }
+  .stat .num{ font-family:var(--font-mono); font-size:26px; color:var(--solar); }
+  .stat .lbl{ font-size:12.5px; color:var(--text-dim); margin-top:6px; max-width:150px; }
+
+  /* hero panel: fake terminal + live timeline */
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;
+  }
+  .panel-head{
+    display:flex; align-items:center; gap:7px; padding:11px 15px; border-bottom:1px solid var(--border);
+    font-family:var(--font-mono); font-size:12px; color:var(--text-dim);
+  }
+  .panel-head .tf{ width:9px; height:9px; border-radius:50%; background:#3a423d; }
+  .panel-body{ padding:18px; font-family:var(--font-mono); font-size:12.5px; color:var(--text-dim); }
+  .panel-body .k{ color:var(--battery); }
+  .panel-body .s{ color:var(--solar); }
+  .panel-body .n{ color:var(--text); }
+  .hero-strip{ display:flex; gap:3px; margin-top:16px; }
+  .hero-strip .blk{ flex:1; height:34px; border-radius:3px; opacity:0; transform:scaleY(0.3); }
+
+  /* ---------- section shell ---------- */
+  section{ padding:78px 0; border-top:1px solid var(--border); }
+  .section-head{ max-width:600px; margin-bottom:42px; }
+  .section-head h2{ font-size:clamp(24px,3vw,32px); font-weight:600; }
+  .section-head p{ color:var(--text-dim); margin-top:12px; font-size:15.5px; }
+
+  /* ---------- feature grid ---------- */
+  .feature-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .feature{ background:var(--bg-raise); padding:26px 24px; position:relative; }
+  .feature::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--solar); opacity:0; transition:opacity .2s; }
+  .feature:hover::before{ opacity:1; }
+  .feature .ico{ width:34px; height:34px; margin-bottom:16px; color:var(--solar); }
+  .feature h3{ font-size:16.5px; font-weight:600; margin-bottom:8px; }
+  .feature p{ color:var(--text-dim); font-size:13.8px; margin:0 0 12px; }
+  .feature ul{ margin:0; padding:0; list-style:none; }
+  .feature li{ font-size:12.8px; color:var(--text-faint); padding:4px 0 4px 14px; position:relative; }
+  .feature li::before{ content:"—"; position:absolute; left:0; color:var(--border-strong); }
+
+  /* ---------- workflow stepper ---------- */
+  .steps{ display:grid; grid-template-columns:repeat(4,1fr); gap:20px; }
+  .step{ position:relative; padding-top:44px; }
+  .step .n{
+    position:absolute; top:0; left:0; width:34px; height:34px; border-radius:50%;
+    border:1px solid var(--border-strong); display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-size:13px; color:var(--solar); background:var(--bg-raise);
+  }
+  .step::after{
+    content:""; position:absolute; top:17px; left:40px; right:-20px; height:1px; background:var(--border);
+  }
+  .step:last-child::after{ display:none; }
+  .step h3{ font-size:14.5px; font-weight:600; margin-bottom:6px; }
+  .step p{ font-size:13px; color:var(--text-dim); margin:0; }
+
+  /* ---------- sensors ---------- */
+  .sensor-cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px; }
+  .sensor-card{
+    --accent:var(--solar);
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px;
+    cursor:pointer; position:relative; transition:border-color .15s;
+  }
+  .sensor-card:hover{ border-color:var(--border-strong); }
+  .sensor-card:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .sensor-card.active{ border-color:var(--accent); }
+  .sensor-card.active::before{ content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:0 3px 3px 0; background:var(--accent); }
+  .sensor-card.waiting{ cursor:default; }
+  .sensor-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .sensor-dom{ font-family:var(--font-mono); font-size:12px; color:var(--accent); }
+  .sensor-state{ display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim); }
+  .sensor-state .dot{ width:6px; height:6px; }
+  .sensor-state .dot.wait{ background:var(--grid); }
+  .sensor-card h3{ font-size:16px; font-weight:600; margin-bottom:6px; }
+  .sensor-card p{ font-size:13px; color:var(--text-dim); margin:0 0 16px; }
+  .sensor-stats{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px 10px; }
+  .sensor-stats b{ display:block; font-family:var(--font-mono); font-weight:500; font-size:15px; }
+  .sensor-stats span{ font-size:11.5px; color:var(--text-faint); }
+  .mix-bar{ display:flex; height:6px; border-radius:3px; overflow:hidden; margin-top:14px; gap:1px; }
+  .mix-bar i{ display:block; height:100%; }
+  .mix-legend{ font-size:11.5px; color:var(--text-faint); margin-top:6px; font-family:var(--font-mono); }
+  .upload-btn{ display:inline-block; margin-top:4px; cursor:pointer; }
+  .upload-btn input{ display:none; }
+  .upload-hint{ font-size:11.5px; color:var(--text-faint); margin-top:10px; }
+  .sensor-panel{ display:none; grid-template-columns:300px 1fr; gap:28px; align-items:start; }
+  .sensor-panel.show{ display:grid; }
+  .sim-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .sim-head h3{ margin:0; }
+  .readout{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  .readout b{ display:block; font-family:var(--font-mono); font-weight:500; font-size:19px; }
+  .readout span{ font-size:11.5px; color:var(--text-dim); }
+  .btn-row{ display:flex; gap:8px; margin-bottom:10px; }
+  .btn-row .btn{ padding:11px 14px; }
+  .config-note{ font-size:12px; color:var(--text-faint); margin:0 0 14px; }
+  .data-wrap{ max-height:250px; overflow:auto; margin-top:18px; border-top:1px solid var(--border); }
+  .data-table{ width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:12px; }
+  .data-table th{ position:sticky; top:0; background:var(--surface); color:var(--text-dim); font-weight:500; text-align:right; padding:8px 10px; border-bottom:1px solid var(--border); }
+  .data-table td{ text-align:right; padding:6px 10px; color:var(--text-dim); border-bottom:1px solid var(--border); }
+  .data-table th:first-child, .data-table td:first-child{ text-align:left; }
+  .run-result{ display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); font-size:13px; }
+  .run-result h4{ margin:0 0 10px; font-family:var(--font-display); font-size:13.5px; font-weight:600; }
+  .run-result .rr{ display:flex; justify-content:space-between; padding:4px 0; color:var(--text-dim); }
+  .run-result .rr b{ font-family:var(--font-mono); font-weight:500; color:var(--text); }
+  .run-result .rr b.good{ color:var(--solar); }
+  .run-result a{ color:var(--solar); }
+
+  /* ---------- dashboard ---------- */
+  .dash-grid{ display:grid; grid-template-columns:300px 1fr; gap:28px; align-items:start; }
+  .config-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; position:sticky; top:88px; }
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:12.5px; color:var(--text-dim); margin-bottom:6px; }
+  .field select, .field input[type=number]{
+    width:100%; background:var(--bg-raise); border:1px solid var(--border-strong); color:var(--text);
+    padding:9px 10px; border-radius:7px; font-family:var(--font-body); font-size:13.5px;
+  }
+  .field input[type=range]{ width:100%; accent-color:var(--solar); }
+  .range-labels{ display:flex; justify-content:space-between; font-size:11px; color:var(--text-faint); margin-top:4px; }
+  .field-row{ display:flex; gap:10px; }
+  .field-row .field{ flex:1; }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .toggle-row label{ font-size:13px; color:var(--text); }
+  .switch{ position:relative; display:block; flex:none; width:38px; height:21px; cursor:pointer; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider-tog{ position:absolute; inset:0; background:var(--border-strong); border-radius:20px; cursor:pointer; transition:.2s; }
+  .slider-tog::before{ content:""; position:absolute; width:15px; height:15px; left:3px; top:3px; background:var(--text); border-radius:50%; transition:.2s; }
+  .switch input:focus-visible + .slider-tog{ outline:2px solid var(--solar); outline-offset:2px; }
+  .switch input:checked + .slider-tog{ background:var(--solar); }
+  .switch input:checked + .slider-tog::before{ transform:translateX(17px); background:#0A140D; }
+  .advanced{ margin-top:6px; }
+  summary{ cursor:pointer; font-size:12.5px; color:var(--text-dim); margin-bottom:14px; }
+  .err-box{ display:none; background:rgba(226,96,79,0.1); border:1px solid rgba(226,96,79,0.35); color:#F2A99A; font-size:12.8px; padding:10px 12px; border-radius:8px; margin-top:14px; }
+
+  .kpi-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:24px; }
+  .kpi{ background:var(--bg-raise); padding:20px; }
+  .kpi .lbl{ font-size:12px; color:var(--text-dim); }
+  .kpi .val{ font-family:var(--font-mono); font-size:24px; margin-top:6px; }
+  .kpi .delta{ font-size:11.5px; margin-top:6px; font-family:var(--font-mono); }
+  .delta.good{ color:var(--solar); }
+  .delta.bad{ color:var(--diesel); }
+
+  .chart-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:24px; }
+  .chart-card h3{ font-size:14.5px; font-weight:600; margin-bottom:14px; }
+  .chart-wrap{ position:relative; height:260px; }
+  .legend-row{ display:flex; gap:18px; margin-top:12px; flex-wrap:wrap; }
+  .legend-item{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text-dim); }
+  .legend-sw{ width:10px; height:10px; border-radius:2px; }
+
+  .timeline-strip{ display:flex; gap:2px; height:56px; }
+  .timeline-strip .blk{ flex:1; border-radius:2px; opacity:0; position:relative; }
+  .timeline-strip .blk.outage{ box-shadow:inset 0 0 0 2px #EDF2EE; }
+  .timeline-ticks{ display:flex; margin-top:6px; }
+  .timeline-ticks span{ flex:1; text-align:center; font-family:var(--font-mono); font-size:10.5px; color:var(--text-faint); }
+
+  .badge-row{ display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
+  .badge{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim); border:1px solid var(--border-strong); padding:5px 10px; border-radius:20px; }
+
+  /* ---------- report ---------- */
+  .report-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:32px; }
+  .report-text{ font-size:15.5px; color:var(--text); line-height:1.7; min-height:1.7em; }
+  .report-placeholder{ color:var(--text-faint); font-size:14px; }
+  .report-actions{ display:flex; gap:12px; margin-top:22px; }
+
+  /* ---------- footer ---------- */
+  footer{ padding:48px 0 60px; border-top:1px solid var(--border); }
+  .foot-grid{ display:grid; grid-template-columns:1.3fr 1fr 1fr; gap:32px; }
+  footer h4{ font-size:13px; color:var(--text-dim); font-weight:600; margin:0 0 12px; }
+  footer ul{ list-style:none; margin:0; padding:0; }
+  footer li{ font-size:12.8px; color:var(--text-faint); margin-bottom:8px; }
+  footer li a{ text-decoration:none; }
+  footer li a:hover{ color:var(--text-dim); }
+  .foot-bottom{ margin-top:36px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--text-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+
+  @media (max-width: 880px){
+    .hero-grid, .dash-grid, .foot-grid, .sensor-cards, .sensor-panel.show{ grid-template-columns:1fr; }
+    .readout{ grid-template-columns:repeat(2,1fr); }
+    .feature-grid{ grid-template-columns:1fr; }
+    .steps{ grid-template-columns:1fr; }
+    .stat-row{ grid-template-columns:repeat(2,1fr); }
+    .kpi-grid{ grid-template-columns:repeat(2,1fr); }
+    .config-card{ position:static; }
+    .navlinks{ display:none; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="#7CDB8A"/></svg>
+      CarbonPilot AI
+    </div>
+    <div class="navlinks">
+      <a href="#how-it-works">How it works</a>
+      <a href="#models">Models</a>
+      <a href="#sensors">Sensors</a>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#report">ESG report</a>
+    </div>
+    <div class="status-pill"><span class="dot" id="statusDot"></span><span id="statusText">checking backend…</span></div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <h1>Pick the cleanest hour to run your data centre on.</h1>
+      <p class="lead">
+        An AI planner that forecasts data-centre load and solar availability, then chooses grid,
+        solar, battery, or diesel for every hour ahead — and turns that plan straight into a
+        carbon and water impact report.
+      </p>
+      <div class="hero-ctas">
+        <button class="btn btn-primary" onclick="document.getElementById('dashboard').scrollIntoView()">Run the planner</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('how-it-works').scrollIntoView()">See how it works</button>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="num">270+</div><div class="lbl">data centres in India as of mid-2025</div></div>
+        <div class="stat"><div class="num">7th</div><div class="lbl">largest data centre market globally</div></div>
+        <div class="stat"><div class="num">22%</div><div class="lbl">of Indian DC buildings are LEED-certified</div></div>
+        <div class="stat"><div class="num">40%+</div><div class="lbl">of DC electricity goes to cooling alone</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="tf"></span><span class="tf"></span><span class="tf"></span>&nbsp;&nbsp;POST /api/plan</div>
+      <div class="panel-body">
+<pre style="margin:0; white-space:pre-wrap;"><span class="n">{</span>
+  <span class="k">"optimizer_engine"</span>: <span class="s">"linear program (PuLP / CBC)"</span>,
+  <span class="k">"mix_pct"</span>: <span class="n">{ grid: 78.5, solar: 11.5, battery: 2.0, diesel: 8.0 }</span>,
+  <span class="k">"savings"</span>: <span class="n">{ co2_kg: 1243.6, cost_inr: 20887 }</span>
+<span class="n">}</span></pre>
+        <div class="hero-strip" id="heroStrip"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how-it-works">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Data flows one direction, stage by stage</h2>
+      <p>Each stage is built and tested independently, then chained into a single hourly cycle from raw feeds to a downloadable report.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>External feeds</h3><p>Live or forecast weather, grid carbon intensity, and data-centre load.</p></div>
+      <div class="step"><div class="n">2</div><h3>Forecasting</h3><p>Load and solar-availability models project the next 24–48 hours.</p></div>
+      <div class="step"><div class="n">3</div><h3>Optimisation</h3><p>An hourly source plan and its carbon/water footprint are computed together.</p></div>
+      <div class="step"><div class="n">4</div><h3>Reporting</h3><p>The dashboard shows the plan, savings, and a downloadable ESG summary.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="models">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Five models, one pipeline</h2>
+      <p>Every box below is a real function in the backend — a lightweight, swappable stand-in for the heavier model named in our research where build time didn't allow for it.</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17l5-6 4 3 5-8 4 5"/></svg>
+        <h3>Load forecasting</h3>
+        <p>Predicts hourly power demand 24–48h ahead.</p>
+        <ul><li>Fourier-feature regression over daily &amp; weekly cycles</li><li>Trained on a labelled synthetic load profile</li><li>Swappable for Prophet, SARIMA, or an LSTM later</li></ul>
+      </div>
+      <div class="feature">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+        <h3>Solar forecasting</h3>
+        <p>Estimates expected solar output for the same window.</p>
+        <ul><li>Regression on cloud cover &amp; irradiance</li><li>Live weather via Open-Meteo, no API key</li><li>Falls back to a clear-sky model offline</li></ul>
+      </div>
+      <div class="feature">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <h3>Source optimisation</h3>
+        <p>Chooses grid, solar, battery, or diesel per hour.</p>
+        <ul><li>Linear program across the whole horizon (PuLP / CBC)</li><li>Couples every hour through battery state of charge</li><li>Cost ↔ carbon priority is a tunable shadow price</li></ul>
+      </div>
+      <div class="feature">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3s6 5.2 6 10a6 6 0 1 1-12 0c0-4.8 6-10 6-10z"/></svg>
+        <h3>Carbon &amp; water calculator</h3>
+        <p>Converts the source plan into footprint figures.</p>
+        <ul><li>Published IPCC / CEA emission factors</li><li>Industry WUE benchmark for cooling water</li><li>Compared against an all-grid baseline</li></ul>
+      </div>
+      <div class="feature">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v12H7l-3 4z"/></svg>
+        <h3>ESG narrative generator</h3>
+        <p>Turns the figures into a plain-language summary.</p>
+        <ul><li>Structured prompt to Claude</li><li>Grounded in the run's own computed numbers</li><li>Template fallback if no API key is set</li></ul>
+      </div>
+      <div class="feature">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>
+        <h3>Hourly scheduler</h3>
+        <p>Re-runs the full cycle automatically.</p>
+        <ul><li>APScheduler background job</li><li>Re-forecasts on a fixed interval</li><li>Every run is kept in a local run history</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="sensors">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Sensors, one per industry domain</h2>
+      <p>Each sensor is an hourly stream of power draw and grid carbon intensity. Pick one, adjust it, watch it run, then hand its readings to the planner in place of the built-in forecast.</p>
+    </div>
+    <div class="sensor-cards" id="sensorCards">
+      <div class="chart-card" style="grid-column:1/-1; margin:0;"><p class="report-placeholder" style="margin:0;">Loading sensors from the backend…</p></div>
+    </div>
+
+    <div class="sensor-panel" id="sensorPanel">
+      <div class="config-card" style="position:static;">
+        <div class="field"><label>Selected sensor</label><div id="sensorSelLabel" style="font-weight:600; font-size:14.5px;">none</div></div>
+        <div class="field">
+          <label for="sLoad">Load scale — <span id="sLoadVal" class="mono">1.00×</span></label>
+          <input type="range" id="sLoad" min="0.5" max="2" step="0.05" value="1">
+          <div class="range-labels"><span>0.5×</span><span>2×</span></div>
+        </div>
+        <div class="field">
+          <label for="sEf">Grid carbon intensity — <span id="sEfVal" class="mono">1.00×</span></label>
+          <input type="range" id="sEf" min="0.5" max="1.5" step="0.05" value="1">
+          <div class="range-labels"><span>cleaner grid</span><span>dirtier grid</span></div>
+        </div>
+        <div class="field">
+          <label for="sNoise">Sensor noise — <span id="sNoiseVal" class="mono">3%</span></label>
+          <input type="range" id="sNoise" min="0" max="15" step="1" value="3">
+          <div class="range-labels"><span>steady</span><span>jittery</span></div>
+        </div>
+        <div class="toggle-row">
+          <label for="sAutosize">Size site assets to this sensor</label>
+          <label class="switch"><input type="checkbox" id="sAutosize" checked><span class="slider-tog"></span></label>
+        </div>
+        <p class="config-note" id="sizeSummary">Fills solar, battery and diesel capacity in the planner from this sensor's peak load.</p>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="simBtn" style="flex:1;">Start simulation</button>
+          <button class="btn btn-ghost" id="simResetBtn">Reset</button>
+        </div>
+        <button class="btn btn-primary" id="sRunBtn" style="width:100%;">Run planner on this sensor</button>
+        <div class="run-result" id="sensorResult"></div>
+      </div>
+
+      <div class="chart-card" style="margin:0;">
+        <div class="sim-head"><h3 id="simTitle">Sensor stream</h3><span class="badge" id="simMode">preview</span></div>
+        <div class="readout">
+          <div><b id="rdLoad">–</b><span id="rdLoadL">load</span></div>
+          <div><b id="rdCo2">–</b><span id="rdCo2L">CO₂ per hour</span></div>
+          <div><b id="rdEf">–</b><span>grid g CO₂/kWh</span></div>
+          <div><b id="rdCum">–</b><span id="rdCumL">CO₂ total</span></div>
+        </div>
+        <div class="chart-wrap"><canvas id="simChart"></canvas></div>
+        <div class="data-wrap"><table class="data-table" id="sensorTable"></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="dashboard">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Run the planner</h2>
+      <p>Pick a site, a horizon, and how much you want to favour cost versus carbon — the plan below is computed by the actual backend, not a canned demo.</p>
+    </div>
+
+    <div class="dash-grid">
+      <div class="config-card">
+        <div class="field">
+          <label for="loadSource">Load source</label>
+          <select id="loadSource">
+            <option value="forecast">Built-in load forecast</option>
+            <option value="tech">Tech sensor</option>
+            <option value="ai">AI sensor</option>
+            <option value="infra">Infrastructure sensor</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="citySelect">Site</label>
+          <select id="citySelect">
+            <option value="Pune">Pune, India</option>
+            <option value="Mumbai">Mumbai, India</option>
+            <option value="Bengaluru">Bengaluru, India</option>
+            <option value="Delhi">Delhi, India</option>
+            <option value="Chennai">Chennai, India</option>
+            <option value="Kolkata">Kolkata, India</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="hoursSelect">Planning horizon</label>
+          <select id="hoursSelect">
+            <option value="24" selected>24 hours</option>
+            <option value="36">36 hours</option>
+            <option value="48">48 hours</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="carbonSlider">Cost vs. carbon priority — <span id="carbonSliderVal" class="mono">balanced</span></label>
+          <input type="range" id="carbonSlider" min="0" max="100" value="50">
+          <div class="range-labels"><span>lowest cost</span><span>lowest carbon</span></div>
+        </div>
+
+        <div class="toggle-row">
+          <label for="outageToggle">Simulate a grid outage</label>
+          <label class="switch"><input type="checkbox" id="outageToggle"><span class="slider-tog"></span></label>
+        </div>
+        <div class="field-row" id="outageHours" style="display:none;">
+          <div class="field"><label>Outage from (hr)</label><input type="number" id="outageStart" value="14" min="0" max="23"></div>
+          <div class="field"><label>Outage until (hr)</label><input type="number" id="outageEnd" value="17" min="0" max="24"></div>
+        </div>
+
+        <div class="config-note" id="outageHint" style="display:none;"></div>
+
+        <details class="advanced">
+          <summary>Advanced: capacity &amp; pricing</summary>
+          <div class="field-row">
+            <div class="field"><label>DC capacity (kW)</label><input type="number" id="dcCapacity" value="1000"></div>
+            <div class="field"><label>Solar capacity (kW)</label><input type="number" id="solarCapacity" value="400"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Battery (kWh)</label><input type="number" id="batteryCapacity" value="500"></div>
+            <div class="field"><label>Battery rate (kW)</label><input type="number" id="batteryRate" value="150"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Grid price (₹/kWh)</label><input type="number" id="gridPrice" value="8.0" step="0.1"></div>
+            <div class="field"><label>Diesel price (₹/L)</label><input type="number" id="dieselPrice" value="95" step="1"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Diesel gen (kW)</label><input type="number" id="dieselMax" value="600"></div>
+          </div>
+          <div class="field"><label>Backend API base URL</label><input type="text" id="apiBase" value="http://localhost:8000"></div>
+        </details>
+
+        <button class="btn btn-primary" id="runBtn" style="width:100%; margin-top:6px;">Run the planner</button>
+        <div class="err-box" id="errBox"></div>
+      </div>
+
+      <div id="results">
+        <div class="badge-row" id="engineBadges" style="display:none;"></div>
+        <div class="err-box" id="planAlert" style="margin:0 0 18px;"></div>
+
+        <div class="kpi-grid" id="kpiGrid" style="display:none;">
+          <div class="kpi"><div class="lbl">Energy cost</div><div class="val" id="kpiCost">₹0</div><div class="delta" id="kpiCostDelta"></div></div>
+          <div class="kpi"><div class="lbl">CO2 emitted</div><div class="val" id="kpiCo2">0 kg</div><div class="delta" id="kpiCo2Delta"></div></div>
+          <div class="kpi"><div class="lbl">Water footprint</div><div class="val" id="kpiWater">0 L</div><div class="delta" id="kpiWaterDelta"></div></div>
+          <div class="kpi"><div class="lbl">Diesel used</div><div class="val" id="kpiDiesel">0 L</div><div class="delta" id="kpiDieselDelta"></div></div>
+        </div>
+
+        <div class="chart-card" id="timelineCard" style="display:none;">
+          <h3>Hour-by-hour recommended source</h3>
+          <div class="timeline-strip" id="timelineStrip"></div>
+          <div class="timeline-ticks" id="timelineTicks"></div>
+          <div class="legend-row">
+            <div class="legend-item"><span class="legend-sw" style="background:var(--grid)"></span>Grid</div>
+            <div class="legend-item"><span class="legend-sw" style="background:var(--solar)"></span>Solar</div>
+            <div class="legend-item"><span class="legend-sw" style="background:var(--battery)"></span>Battery</div>
+            <div class="legend-item"><span class="legend-sw" style="background:var(--diesel)"></span>Diesel</div>
+            <div class="legend-item"><span class="legend-sw" style="background:transparent; box-shadow:inset 0 0 0 2px #EDF2EE;"></span>Grid outage hour</div>
+          </div>
+        </div>
+
+        <div class="chart-card" id="loadChartCard" style="display:none;">
+          <h3>Forecast load vs. solar availability</h3>
+          <div class="chart-wrap"><canvas id="loadChart"></canvas></div>
+        </div>
+
+        <div class="chart-card" id="mixChartCard" style="display:none;">
+          <h3>Hourly energy source mix (kW)</h3>
+          <div class="chart-wrap"><canvas id="mixChart"></canvas></div>
+        </div>
+
+        <div class="chart-card" id="emptyState">
+          <p class="report-placeholder" style="margin:0;">Set your parameters and click "Run the planner" — results, charts, and the ESG report below will populate from the live backend.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="report">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>ESG impact report</h2>
+      <p>Generated from this run's own numbers — grounded in whatever plan is currently on screen above.</p>
+    </div>
+    <div class="report-card">
+      <div class="badge-row" id="narrativeBadge" style="display:none;"></div>
+      <div class="report-text" id="narrativeText"><span class="report-placeholder">Run the planner first, then generate a narrative summary from its results.</span></div>
+      <div class="report-actions">
+        <button class="btn btn-ghost" id="narrativeBtn">Generate ESG narrative</button>
+        <button class="btn btn-primary" id="pdfBtn">Download PDF report</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="brand" style="margin-bottom:10px;">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="#7CDB8A"/></svg>
+          CarbonPilot AI
+        </div>
+        <p style="color:var(--text-faint); font-size:12.8px; max-width:320px; margin:0;">
+          Energy Source Switch Planner &amp; Carbon-Water Impact Reporter — a hackathon-scoped MVP
+          from the larger Green AI Datacenters research programme.
+        </p>
+      </div>
+      <div>
+        <h4>Team</h4>
+        <ul>
+          <li>Sriyash Ghodke</li><li>Siddhi Sawant</li><li>Soham Gaikwad</li>
+          <li>Deepansh Telang</li><li>Nishita Sethiya</li>
+          <li>Faculty guide: Dr. Renuka Suryawanshi, MIT WPU</li>
+        </ul>
+      </div>
+      <div>
+        <h4>References</h4>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Data_center" target="_blank">Data Center — Wikipedia</a></li>
+          <li><a href="https://www.datacentermap.com/india/" target="_blank">Data Center Map, India</a></li>
+          <li><a href="https://www.theguardian.com/technology/2024/sep/15/data-center-gas-emissions-tech" target="_blank">The Guardian, 2024</a></li>
+          <li><a href="https://igbc.in/igbc-ap" target="_blank">Indian Green Building Council</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>Prepared for hackathon idea submission, September 2026</span>
+      <span>All figures are forecast/simulated for demo purposes — validate against metered site data before formal ESG use.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+const CITY_COORDS = {
+  Pune:{lat:18.5204, lon:73.8567}, Mumbai:{lat:19.0760, lon:72.8777},
+  Bengaluru:{lat:12.9716, lon:77.5946}, Delhi:{lat:28.6139, lon:77.2090},
+  Chennai:{lat:13.0827, lon:80.2707}, Kolkata:{lat:22.5726, lon:88.3639},
+};
+const SRC_COLOR = { grid:'#E8B34D', solar:'#7CDB8A', battery:'#4FC3D9', diesel:'#E2604F' };
+
+let lastPlan = null;
+let loadChartInstance = null;
+let mixChartInstance = null;
+
+function apiBase(){ return document.getElementById('apiBase').value.replace(/\/$/, ''); }
+
+/* ---------------- decorative hero strip (looping, illustrative) ---------------- */
+function paintHeroStrip(){
+  const strip = document.getElementById('heroStrip');
+  strip.innerHTML = '';
+  const pattern = ['grid','grid','solar','solar','solar','battery','grid','grid','diesel','grid','solar','solar',
+                    'grid','grid','solar','solar','battery','grid','grid','grid','solar','solar','grid','grid'];
+  pattern.forEach((src)=>{
+    const d = document.createElement('div');
+    d.className = 'blk';
+    d.style.background = SRC_COLOR[src];
+    strip.appendChild(d);
+  });
+  anime({ targets: '#heroStrip .blk', opacity:[0,0.85], scaleY:[0.3,1], delay: anime.stagger(28), easing:'easeOutQuad', duration:500 });
+}
+
+/* ---------------- scroll reveal for feature cards & steps ---------------- */
+function initScrollReveal(){
+  const groups = [document.querySelectorAll('.feature'), document.querySelectorAll('.step')];
+  groups.forEach(nodes=>{
+    if(!nodes.length) return;
+    nodes.forEach(n=> n.style.opacity = 0);
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{
+        if(e.isIntersecting){
+          anime({ targets: e.target, opacity:[0,1], translateY:[16,0], duration:600, easing:'easeOutQuad' });
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.2 });
+    nodes.forEach(n=> io.observe(n));
+  });
+}
+
+/* ---------------- backend health check ---------------- */
+async function checkHealth(){
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  try{
+    const r = await fetch(apiBase() + '/api/health', { signal: AbortSignal.timeout(3500) });
+    if(!r.ok) throw new Error('bad status');
+    const d = await r.json();
+    dot.className = 'dot up';
+    txt.textContent = 'backend connected';
+  }catch(e){
+    dot.className = 'dot down';
+    txt.textContent = 'backend not reachable';
+  }
+}
+
+/* ---------------- carbon slider label ---------------- */
+function updateCarbonLabel(){
+  const v = parseInt(document.getElementById('carbonSlider').value, 10);
+  const lbl = document.getElementById('carbonSliderVal');
+  if(v < 25) lbl.textContent = 'mostly cost-driven';
+  else if(v < 45) lbl.textContent = 'cost-leaning';
+  else if(v <= 55) lbl.textContent = 'balanced';
+  else if(v < 75) lbl.textContent = 'carbon-leaning';
+  else lbl.textContent = 'mostly carbon-driven';
+}
+
+/* ---------------- run the planner ---------------- */
+async function runPlanner(){
+  const btn = document.getElementById('runBtn');
+  const errBox = document.getElementById('errBox');
+  errBox.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+
+  if(activeSensor && document.getElementById('loadSource').value !== 'forecast') maybeAutosize();
+  const city = document.getElementById('citySelect').value;
+  const coords = CITY_COORDS[city];
+  const payload = {
+    city: city + ', India',
+    lat: coords.lat, lon: coords.lon,
+    hours: parseInt(document.getElementById('hoursSelect').value, 10),
+    dc_capacity_kw: parseFloat(document.getElementById('dcCapacity').value),
+    solar_capacity_kw: parseFloat(document.getElementById('solarCapacity').value),
+    battery_capacity_kwh: parseFloat(document.getElementById('batteryCapacity').value),
+    battery_max_rate_kw: parseFloat(document.getElementById('batteryRate').value),
+    diesel_max_kw: parseFloat(document.getElementById('dieselMax').value),
+    grid_price_per_kwh: parseFloat(document.getElementById('gridPrice').value),
+    diesel_price_per_l: parseFloat(document.getElementById('dieselPrice').value),
+    carbon_priority: parseInt(document.getElementById('carbonSlider').value, 10) / 100,
+    simulate_outage: document.getElementById('outageToggle').checked,
+    outage_start_hour: parseInt(document.getElementById('outageStart').value, 10),
+    outage_end_hour: parseInt(document.getElementById('outageEnd').value, 10),
+  };
+  if(activeSensor && document.getElementById('loadSource').value !== 'forecast'){
+    const c = sensorCfg();
+    payload.sensor_id = activeSensor;
+    payload.sensor_load_scale = c.scale;
+    payload.sensor_grid_multiplier = c.mult;
+    payload.sensor_noise_pct = c.noise;
+  }
+
+  try{
+    const r = await fetch(apiBase() + '/api/plan', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    if(!r.ok){ const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail || 'Request failed'); }
+    const plan = await r.json();
+    lastPlan = plan;
+    renderPlan(plan);
+    updateSensorResult(plan);
+    checkHealth();
+  }catch(e){
+    errBox.textContent = 'Could not reach the planner API (' + e.message + '). Make sure the backend is running: python app.py — and that the API base URL above is correct.';
+    errBox.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Run the planner';
+  }
+}
+
+function fmtMoney(v){ return '₹' + Math.round(v).toLocaleString('en-IN'); }
+function fmtDelta(saved, pct){
+  const good = saved >= 0;
+  return { text: (good? 'saved ' : 'over ') + Math.abs(pct).toFixed(1) + '% vs. baseline', cls: good ? 'good' : 'bad' };
+}
+
+function renderPlan(plan){
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('engineBadges').style.display = 'flex';
+  document.getElementById('engineBadges').innerHTML =
+    '<span class="badge">engine: ' + plan.optimizer_engine + '</span>' +
+    '<span class="badge">weather: ' + plan.weather_source + '</span>' +
+    '<span class="badge">' + plan.hourly.length + 'h horizon</span>' +
+    (plan.totals.outage_hours > 0 ? '<span class="badge">grid outage: ' + plan.totals.outage_hours + ' h</span>' : '') + sensorBadges(plan);
+  showPlanAlert(plan);
+
+  // KPIs
+  document.getElementById('kpiGrid').style.display = 'grid';
+  document.getElementById('kpiCost').textContent = fmtMoney(plan.totals.cost_inr);
+  document.getElementById('kpiCo2').textContent = Math.round(plan.totals.co2_kg).toLocaleString('en-IN') + ' kg';
+  document.getElementById('kpiWater').textContent = Math.round(plan.totals.water_l).toLocaleString('en-IN') + ' L';
+  document.getElementById('kpiDiesel').textContent = plan.savings.diesel_liters.toFixed(1) + ' L';
+
+  const costD = fmtDelta(plan.savings.cost_inr, plan.savings.cost_pct);
+  const co2D = fmtDelta(plan.savings.co2_kg, plan.savings.co2_pct);
+  const waterD = fmtDelta(plan.savings.water_l, plan.savings.water_pct);
+  document.getElementById('kpiCostDelta').textContent = costD.text;
+  document.getElementById('kpiCostDelta').className = 'delta ' + costD.cls;
+  document.getElementById('kpiCo2Delta').textContent = co2D.text;
+  document.getElementById('kpiCo2Delta').className = 'delta ' + co2D.cls;
+  document.getElementById('kpiWaterDelta').textContent = waterD.text;
+  document.getElementById('kpiWaterDelta').className = 'delta ' + waterD.cls;
+  document.getElementById('kpiDieselDelta').textContent = plan.savings.diesel_liters > 0 ? 'backup generator engaged' : 'not needed this run';
+  document.getElementById('kpiDieselDelta').className = 'delta ' + (plan.savings.diesel_liters > 0 ? 'bad' : 'good');
+
+  anime({ targets:'.kpi .val', opacity:[0,1], translateY:[8,0], duration:450, delay: anime.stagger(70), easing:'easeOutQuad' });
+
+  // Timeline strip
+  document.getElementById('timelineCard').style.display = 'block';
+  const strip = document.getElementById('timelineStrip');
+  strip.innerHTML = '';
+  const ticks = document.getElementById('timelineTicks');
+  ticks.innerHTML = '';
+  plan.hourly.forEach((h, i)=>{
+    const sources = { grid:h.grid_kw, solar:h.solar_kw, battery:h.battery_discharge_kw, diesel:h.diesel_kw };
+    const dominant = Object.entries(sources).sort((a,b)=>b[1]-a[1])[0][0];
+    const d = document.createElement('div');
+    d.className = 'blk' + (h.grid_outage ? ' outage' : '');
+    d.title = new Date(h.timestamp).toLocaleTimeString([], {hour:'2-digit'}) + ' — ' + dominant + (h.grid_outage ? ' (grid outage)' : '');
+    d.style.background = SRC_COLOR[dominant];
+    strip.appendChild(d);
+    const t = document.createElement('span');
+    t.textContent = (i % 4 === 0) ? new Date(h.timestamp).getHours() + ':00' : '';
+    ticks.appendChild(t);
+  });
+  anime({ targets:'#timelineStrip .blk', opacity:[0,1], delay: anime.stagger(18), duration:400, easing:'easeOutQuad' });
+
+  // Load vs solar chart
+  document.getElementById('loadChartCard').style.display = 'block';
+  const labels = plan.hourly.map(h => new Date(h.timestamp).getHours() + ':00');
+  if(loadChartInstance) loadChartInstance.destroy();
+  loadChartInstance = new Chart(document.getElementById('loadChart'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Forecast load (kW)', data: plan.hourly.map(h=>h.load_kw), borderColor:'#EDF2EE', backgroundColor:'rgba(237,242,238,0.08)', tension:0.35, fill:true, pointRadius:0 },
+      { label:'Solar available (kW)', data: plan.hourly.map(h=>h.solar_available_kw), borderColor:'#7CDB8A', backgroundColor:'rgba(124,219,138,0.12)', tension:0.35, fill:true, pointRadius:0 },
+    ]},
+    options: chartOptions()
+  });
+
+  // Stacked mix chart
+  document.getElementById('mixChartCard').style.display = 'block';
+  if(mixChartInstance) mixChartInstance.destroy();
+  mixChartInstance = new Chart(document.getElementById('mixChart'), {
+    type:'bar',
+    data:{ labels, datasets:[
+      { label:'Grid', data: plan.hourly.map(h=>h.grid_kw), backgroundColor:SRC_COLOR.grid, stack:'s' },
+      { label:'Solar', data: plan.hourly.map(h=>h.solar_kw), backgroundColor:SRC_COLOR.solar, stack:'s' },
+      { label:'Battery', data: plan.hourly.map(h=>h.battery_discharge_kw), backgroundColor:SRC_COLOR.battery, stack:'s' },
+      { label:'Diesel', data: plan.hourly.map(h=>h.diesel_kw), backgroundColor:SRC_COLOR.diesel, stack:'s' },
+    ].concat(plan.totals.unserved_kwh > 0 ? [{ label:'Unserved load', data: plan.hourly.map(h=>h.unserved_kw), backgroundColor:'#EDF2EE', stack:'s' }] : [])},
+    options: chartOptions(true)
+  });
+
+  // reset narrative section for the new plan
+  document.getElementById('narrativeText').innerHTML = '<span class="report-placeholder">Click "Generate ESG narrative" to summarise this run.</span>';
+  document.getElementById('narrativeBadge').style.display = 'none';
+}
+
+function showPlanAlert(plan){
+  const box = document.getElementById('planAlert');
+  const t = plan.totals;
+  if(t.unserved_kwh > 0){
+    box.textContent = 'During the grid outage the site could not serve ' + Math.round(t.unserved_kwh).toLocaleString('en-IN') +
+      ' kWh of its load. Raise the diesel generator capacity or battery size under Advanced, or turn on "Size site assets to this sensor".';
+    box.style.display = 'block';
+  } else { box.style.display = 'none'; }
+}
+
+function chartOptions(stacked){
+  return {
+    responsive:true, maintainAspectRatio:false,
+    interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:{ labels:{ color:'#94A39A', font:{ family:'Inter', size:11.5 } } } },
+    scales:{
+      x:{ stacked: !!stacked, ticks:{ color:'#5E6B63', font:{ family:'IBM Plex Mono', size:10.5 } }, grid:{ color:'rgba(237,242,238,0.05)' } },
+      y:{ stacked: !!stacked, ticks:{ color:'#5E6B63', font:{ family:'IBM Plex Mono', size:10.5 } }, grid:{ color:'rgba(237,242,238,0.05)' } },
+    }
+  };
+}
+
+/* ---------------- ESG narrative + PDF ---------------- */
+async function generateNarrative(){
+  if(!lastPlan){ alert('Run the planner first.'); return; }
+  const btn = document.getElementById('narrativeBtn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try{
+    const r = await fetch(apiBase() + '/api/report/esg', { method:'POST' });
+    if(!r.ok) throw new Error('request failed');
+    const d = await r.json();
+    document.getElementById('narrativeBadge').style.display = 'flex';
+    document.getElementById('narrativeBadge').innerHTML = '<span class="badge">' + d.generated_with + '</span>';
+    const el = document.getElementById('narrativeText');
+    el.textContent = '';
+    el.style.opacity = 0;
+    el.textContent = d.narrative;
+    anime({ targets: el, opacity:[0,1], duration:700, easing:'easeOutQuad' });
+  }catch(e){
+    document.getElementById('narrativeText').innerHTML = '<span class="report-placeholder">Could not generate a narrative — is the backend running?</span>';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generate ESG narrative';
+  }
+}
+
+async function downloadPdf(){
+  if(!lastPlan){ alert('Run the planner first.'); return; }
+  const btn = document.getElementById('pdfBtn');
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  try{
+    const r = await fetch(apiBase() + '/api/report/pdf');
+    if(!r.ok) throw new Error('request failed');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'esg_impact_report.pdf'; a.click();
+    URL.revokeObjectURL(url);
+  }catch(e){
+    alert('Could not download the PDF — is the backend running?');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Download PDF report';
+  }
+}
+
+/* ---------------- sensors ---------------- */
+const SENSOR_ACCENT = { tech:'#4FC3D9', ai:'#7CDB8A', infra:'#E8B34D' };
+const SIM_WINDOW = 36;
+let sensors = [];
+let activeSensor = null;
+const sensorRows = {};
+let simChart = null, simTimer = null, simIdx = 0, simCum = 0, simState = 'idle';
+
+function fmtNum(v, d){ return Number(v).toLocaleString('en-IN', { maximumFractionDigits: d || 0 }); }
+function el(id){ return document.getElementById(id); }
+function sensorCfg(){ return { scale: parseFloat(el('sLoad').value), mult: parseFloat(el('sEf').value), noise: parseFloat(el('sNoise').value) }; }
+function gauss(){ let u = 0, v = 0; while(!u) u = Math.random(); while(!v) v = Math.random(); return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v); }
+
+function sensorBadges(plan){
+  if(!plan.sensor) return '<span class="badge">load: built-in forecast</span>';
+  return '<span class="badge">sensor: ' + plan.sensor.label + '</span>' +
+         '<span class="badge">as recorded: ' + fmtNum(plan.sensor.recorded_co2_kg) + ' kg CO₂</span>';
+}
+
+async function loadSensors(){
+  const box = el('sensorCards');
+  try{
+    const r = await fetch(apiBase() + '/api/sensors', { signal: AbortSignal.timeout(4000) });
+    if(!r.ok) throw new Error('bad status');
+    sensors = await r.json();
+    renderSensorCards();
+    const first = sensors.find(x => x.ready);
+    if(first && !activeSensor) selectSensor(first.id);
+  }catch(e){
+    box.innerHTML = '<div class="chart-card" style="grid-column:1/-1; margin:0;"><p class="report-placeholder" style="margin:0;">Sensors are served by the backend. Start it with <span class="mono">python app.py</span>, then reload this page.</p></div>';
+  }
+}
+
+function renderSensorCards(){
+  const box = el('sensorCards');
+  box.innerHTML = '';
+  sensors.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'sensor-card' + (s.id === activeSensor ? ' active' : '') + (s.ready ? '' : ' waiting');
+    card.style.setProperty('--accent', SENSOR_ACCENT[s.id] || '#7CDB8A');
+    if(s.ready){ card.tabIndex = 0; card.setAttribute('role', 'button'); }
+    let body = '';
+    if(s.ready){
+      body = '<div class="sensor-stats">' +
+        '<div><b>' + fmtNum(s.mean_kw) + ' kW</b><span>mean load</span></div>' +
+        '<div><b>' + fmtNum(s.peak_kw) + ' kW</b><span>peak load</span></div>' +
+        '<div><b>' + fmtNum(s.mean_ef) + ' g</b><span>grid CO₂ per kWh</span></div>' +
+        '<div><b>' + fmtNum(s.recorded_co2_kg) + ' kg</b><span>CO₂ over ' + s.rows + ' h</span></div></div>';
+      if(s.mix_pct){
+        const m = s.mix_pct;
+        body += '<div class="mix-bar">' +
+          '<i style="width:' + m.grid + '%; background:' + SRC_COLOR.grid + '"></i>' +
+          '<i style="width:' + m.solar + '%; background:' + SRC_COLOR.solar + '"></i>' +
+          '<i style="width:' + m.wind + '%; background:' + SRC_COLOR.battery + '"></i>' +
+          '<i style="width:' + m.diesel + '%; background:' + SRC_COLOR.diesel + '"></i></div>' +
+          '<div class="mix-legend">grid ' + m.grid + '% · solar ' + m.solar + '% · wind ' + m.wind + '% · diesel ' + m.diesel + '%</div>';
+      }
+    }
+    body += '<label class="upload-btn btn btn-ghost">' + (s.ready ? 'Update CSV' : 'Upload CSV') +
+            '<input type="file" accept=".csv,text/csv"></label>';
+    if(s.error) body += '<div class="upload-hint" style="color:#F2A99A;">' + s.error + '</div>';
+    else if(!s.ready) body += '<div class="upload-hint">Needs a power column (facility_power_kw, power_kw or load_kw). Timestamp and grid_intensity_g_per_kwh are optional.</div>';
+    card.innerHTML =
+      '<div class="sensor-top"><span class="sensor-dom">' + s.domain + '</span>' +
+      '<span class="sensor-state"><span class="dot ' + (s.ready ? 'up' : 'wait') + '"></span>' + (s.ready ? 'ready' : (s.error ? 'needs a valid CSV' : 'awaiting data')) + '</span></div>' +
+      '<h3>' + s.label + '</h3><p>' + s.blurb + '</p>' + body;
+    if(s.ready){
+      card.addEventListener('click', () => selectSensor(s.id));
+      card.addEventListener('keydown', (e) => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); selectSensor(s.id); } });
+    }
+    const up = card.querySelector('input[type=file]');
+    if(up){
+      up.addEventListener('click', e => e.stopPropagation());
+      up.parentElement.addEventListener('click', e => e.stopPropagation());
+      up.addEventListener('change', () => { if(up.files[0]) uploadSensorCsv(s.id, up.files[0]); });
+    }
+    box.appendChild(card);
+  });
+  // keep the dashboard's load-source dropdown in step with what's ready
+  sensors.forEach(s => {
+    const opt = el('loadSource').querySelector('option[value="' + s.id + '"]');
+    if(opt){ opt.disabled = !s.ready; opt.textContent = s.domain + ' sensor' + (s.ready ? '' : ' (awaiting data)'); }
+  });
+}
+
+async function uploadSensorCsv(id, file){
+  try{
+    const text = await file.text();
+    const r = await fetch(apiBase() + '/api/sensors/' + id + '/upload', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ csv: text })
+    });
+    if(!r.ok){ const e = await r.json().catch(() => ({ detail:'upload failed' })); throw new Error(typeof e.detail === 'string' ? e.detail : 'file too large or invalid'); }
+    delete sensorRows[id];
+    await loadSensors();
+    selectSensor(id);
+  }catch(e){
+    alert('Could not use that file: ' + e.message);
+  }
+}
+
+async function selectSensor(id){
+  const s = sensors.find(x => x.id === id);
+  if(!s || !s.ready) return;
+  stopSim();
+  activeSensor = id;
+  el('loadSource').value = id;
+  renderSensorCards();
+  el('sensorPanel').classList.add('show');
+  el('sensorSelLabel').textContent = s.label;
+  el('simTitle').textContent = s.label + ' stream';
+  if(!sensorRows[id]){
+    try{
+      const r = await fetch(apiBase() + '/api/sensors/' + id + '/data?limit=96');
+      if(!r.ok) throw new Error('bad status');
+      sensorRows[id] = (await r.json()).rows;
+    }catch(e){
+      alert('Could not load that sensor’s readings from the backend.');
+      return;
+    }
+  }
+  resetSim();
+  maybeAutosize();
+}
+
+function maybeAutosize(){
+  if(!el('sAutosize').checked || !activeSensor) return;
+  const s = sensors.find(x => x.id === activeSensor);
+  if(!s) return;
+  const k = parseFloat(el('sLoad').value);
+  const peak = s.peak_kw * k;
+  const r10 = v => Math.max(10, Math.round(v / 10) * 10);
+  el('dcCapacity').value = r10(peak * 1.1);
+  el('solarCapacity').value = r10((s.solar_peak_kw ? s.solar_peak_kw : peak * 0.4) * k);
+  el('batteryCapacity').value = r10(peak * 0.5);
+  el('batteryRate').value = r10(peak * 0.15);
+  el('dieselMax').value = r10(peak * 1.1);
+  updateSizeSummary();
+}
+
+function updateSizeSummary(){
+  const n = id => fmtNum(parseFloat(el(id).value));
+  el('sizeSummary').textContent = el('sAutosize').checked
+    ? 'Sized to this sensor: solar ' + n('solarCapacity') + ' kW, battery ' + n('batteryCapacity') + ' kWh at ' + n('batteryRate') + ' kW, diesel ' + n('dieselMax') + ' kW.'
+    : 'Not sizing automatically: the planner uses the capacities under Advanced.';
+}
+
+function updateOutageHint(){
+  const hint = el('outageHint');
+  if(!el('outageToggle').checked){ hint.style.display = 'none'; return; }
+  const a = parseInt(el('outageStart').value, 10), b = parseInt(el('outageEnd').value, 10);
+  let n = 0;
+  if(!isNaN(a) && !isNaN(b)) n = a < b ? b - a : (a > b ? 24 - a + b : 0);
+  hint.textContent = n === 0 ? 'Start and end are the same hour, so no outage is simulated.'
+    : 'Grid is off for ' + n + ' h (' + String(a).padStart(2,'0') + ':00 to ' + String(b % 24).padStart(2,'0') + ':00). Diesel is only allowed during these hours.';
+  hint.style.display = 'block';
+}
+
+function previewSeries(){
+  const c = sensorCfg();
+  return (sensorRows[activeSensor] || []).map(r => ({
+    t: new Date(r.timestamp).getHours() + ':00',
+    load: r.load_kw * c.scale,
+    co2: (r.grid_co2_kg * c.mult + r.other_co2_kg) * c.scale,
+    ef: r.grid_ef * c.mult,
+  }));
+}
+
+function ensureSimChart(){
+  if(simChart) return;
+  const o = chartOptions();
+  o.animation = false;
+  o.scales.y1 = { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#E2604F', font:{ family:'IBM Plex Mono', size:10.5 } } };
+  simChart = new Chart(el('simChart'), {
+    type:'line',
+    data:{ labels:[], datasets:[
+      { label:'Load (kW)', data:[], borderColor:'#EDF2EE', backgroundColor:'rgba(237,242,238,0.08)', tension:0.35, fill:true, pointRadius:0, yAxisID:'y' },
+      { label:'CO₂ (kg/h)', data:[], borderColor:'#E2604F', tension:0.35, pointRadius:0, yAxisID:'y1' },
+    ]},
+    options:o
+  });
+}
+
+function setReadouts(load, co2, ef, cum, live){
+  el('rdLoad').textContent = fmtNum(load) + ' kW';
+  el('rdCo2').textContent = fmtNum(co2) + ' kg';
+  el('rdEf').textContent = fmtNum(ef);
+  el('rdCum').textContent = fmtNum(cum) + ' kg';
+  el('rdLoadL').textContent = live ? 'load now' : 'mean load';
+  el('rdCo2L').textContent = live ? 'CO₂ this hour' : 'mean CO₂ per hour';
+  el('rdCumL').textContent = live ? 'CO₂ since start' : 'CO₂ over full series';
+}
+
+function showPreview(){
+  if(!activeSensor) return;
+  ensureSimChart();
+  const p = previewSeries();
+  simChart.data.labels = p.map(x => x.t);
+  simChart.data.datasets[0].data = p.map(x => x.load);
+  simChart.data.datasets[1].data = p.map(x => x.co2);
+  simChart.update('none');
+  const n = p.length || 1;
+  renderSensorTable();
+  setReadouts(p.reduce((a,x)=>a+x.load,0)/n, p.reduce((a,x)=>a+x.co2,0)/n, p.reduce((a,x)=>a+x.ef,0)/n, p.reduce((a,x)=>a+x.co2,0), false);
+  el('simMode').textContent = 'preview · full recorded series';
+  el('simBtn').textContent = 'Start simulation';
+  simState = 'idle';
+}
+
+function simTick(){
+  const rows = sensorRows[activeSensor];
+  if(!rows || !rows.length) return;
+  const c = sensorCfg();
+  const r = rows[simIdx % rows.length];
+  const jitter = Math.max(0.2, 1 + (c.noise / 100) * gauss());
+  const load = r.load_kw * c.scale * jitter;
+  const co2 = (r.grid_co2_kg * c.mult + r.other_co2_kg) * c.scale * jitter;
+  simCum += co2;
+  const d = simChart.data;
+  d.labels.push(new Date(r.timestamp).getHours() + ':00');
+  d.datasets[0].data.push(load);
+  d.datasets[1].data.push(co2);
+  if(d.labels.length > SIM_WINDOW){ d.labels.shift(); d.datasets[0].data.shift(); d.datasets[1].data.shift(); }
+  simChart.update('none');
+  setReadouts(load, co2, r.grid_ef * c.mult, simCum, true);
+  simIdx++;
+}
+
+function toggleSim(){
+  if(!activeSensor) return;
+  if(simState === 'running'){
+    clearInterval(simTimer); simTimer = null; simState = 'paused';
+    el('simBtn').textContent = 'Resume simulation';
+    el('simMode').textContent = 'paused';
+    return;
+  }
+  ensureSimChart();
+  if(simState === 'idle'){
+    simChart.data.labels = []; simChart.data.datasets.forEach(ds => ds.data = []);
+    simIdx = 0; simCum = 0;
+  }
+  simState = 'running';
+  el('simBtn').textContent = 'Pause simulation';
+  el('simMode').textContent = 'live stream';
+  simTimer = setInterval(simTick, 450);
+}
+
+function stopSim(){ if(simTimer){ clearInterval(simTimer); simTimer = null; } simState = 'idle'; }
+function resetSim(){ stopSim(); showPreview(); }
+
+function renderSensorTable(){
+  const t = el('sensorTable');
+  const p = previewSeries();
+  t.innerHTML = '<thead><tr><th>hour</th><th>load (kW)</th><th>grid g/kWh</th><th>CO₂ (kg)</th></tr></thead><tbody>' +
+    p.map(x => '<tr><td>' + x.t + '</td><td>' + fmtNum(x.load) + '</td><td>' + fmtNum(x.ef) + '</td><td>' + fmtNum(x.co2) + '</td></tr>').join('') + '</tbody>';
+}
+
+function updateSensorResult(plan){
+  const box = el('sensorResult');
+  if(!plan.sensor){ box.style.display = 'none'; return; }
+  const t = plan.totals, b = plan.baseline_totals, sv = plan.savings;
+  const row = (l, v, cls) => '<div class="rr"><span>' + l + '</span><b class="' + (cls || '') + '">' + v + '</b></div>';
+  box.innerHTML = '<h4>Planner result on this sensor</h4>' +
+    row('CO₂ with the plan', fmtNum(t.co2_kg) + ' kg') +
+    row('CO₂ if all grid', fmtNum(b.co2_kg) + ' kg') +
+    row('CO₂ as recorded by sensor', fmtNum(plan.sensor.recorded_co2_kg) + ' kg') +
+    row('Saved vs all grid', sv.co2_pct.toFixed(1) + '%', sv.co2_pct >= 0 ? 'good' : '') +
+    row('Energy cost', fmtMoney(t.cost_inr)) +
+    row('Diesel used', sv.diesel_liters.toFixed(1) + ' L') +
+    (t.outage_hours > 0 ? row('Grid outage', t.outage_hours + ' h, unserved ' + fmtNum(t.unserved_kwh) + ' kWh', t.unserved_kwh > 0 ? '' : 'good') : '') +
+    '<div style="margin-top:8px;"><a href="#dashboard">See the full hour-by-hour plan below</a></div>';
+  box.style.display = 'block';
+}
+
+function onSensorCfg(){
+  el('sLoadVal').textContent = parseFloat(el('sLoad').value).toFixed(2) + '×';
+  el('sEfVal').textContent = parseFloat(el('sEf').value).toFixed(2) + '×';
+  el('sNoiseVal').textContent = el('sNoise').value + '%';
+  renderSensorTable();
+  if(simState === 'idle') showPreview();
+}
+
+function onLoadSourceChange(){
+  const v = el('loadSource').value;
+  if(v === 'forecast') return;
+  selectSensor(v);
+}
+
+/* ---------------- wire up (only after anime.js + Chart.js are confirmed loaded) ---------------- */
+function initApp(){
+  document.getElementById('carbonSlider').addEventListener('input', updateCarbonLabel);
+  document.getElementById('outageToggle').addEventListener('change', (e)=>{
+    document.getElementById('outageHours').style.display = e.target.checked ? 'flex' : 'none';
+    updateOutageHint();
+  });
+  document.getElementById('runBtn').addEventListener('click', runPlanner);
+  document.getElementById('narrativeBtn').addEventListener('click', generateNarrative);
+  document.getElementById('pdfBtn').addEventListener('click', downloadPdf);
+
+  ['sLoad','sEf','sNoise'].forEach(id => el(id).addEventListener('input', onSensorCfg));
+  el('sLoad').addEventListener('change', maybeAutosize);
+  el('sAutosize').addEventListener('change', () => { maybeAutosize(); updateSizeSummary(); });
+  ['dcCapacity','solarCapacity','batteryCapacity','batteryRate','dieselMax'].forEach(id => el(id).addEventListener('input', () => {
+    if(el('sAutosize').checked){ el('sAutosize').checked = false; }
+    updateSizeSummary();
+  }));
+  ['outageStart','outageEnd'].forEach(id => el(id).addEventListener('input', updateOutageHint));
+  el('simBtn').addEventListener('click', toggleSim);
+  el('simResetBtn').addEventListener('click', resetSim);
+  el('sRunBtn').addEventListener('click', async () => {
+    const b = el('sRunBtn'); b.disabled = true; b.textContent = 'Running…';
+    await runPlanner();
+    b.disabled = false; b.textContent = 'Run planner on this sensor';
+  });
+  el('loadSource').addEventListener('change', onLoadSourceChange);
+  loadSensors();
+
+  paintHeroStrip();
+  initScrollReveal();
+  updateCarbonLabel();
+  checkHealth();
+}
+
+window.__libsReady
+  .then(initApp)
+  .catch(() => {
+    const errBox = document.getElementById('errBox');
+    errBox.textContent = 'Could not load required scripts (anime.js / Chart.js) from any CDN. Check your internet connection or firewall, then reload the page.';
+    errBox.style.display = 'block';
+    document.getElementById('runBtn').disabled = true;
+    checkHealth();
+  });
+</script>
+</body>
+</html>
